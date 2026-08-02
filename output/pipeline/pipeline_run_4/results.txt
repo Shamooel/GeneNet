@@ -1,0 +1,15 @@
+Pipeline Run Execution Summary
+Total Samples: 801
+Total Genes: 20531
+Total Classes: 5
+Top Genes Selected: 500
+Hash Table Entries: 500
+Pearson Pairs: 124750
+Graph Nodes: 500
+Graph Edges: 1814
+DFS Components: 304
+BFS Components: 304
+Training Accuracy: 99.6255%
+Training Precision: 99.802%
+Training Recall: 99.5793%
+OOB Error (Unseen Data Estimate): 3.15068%

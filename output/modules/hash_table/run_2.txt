@@ -1,0 +1,2 @@
+Module: Hash Table
+Total Entries: 500

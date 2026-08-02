@@ -1,0 +1,79 @@
+# Project: GeneNet
+# Makefile created by Dev-C++ 5.11
+
+CPP      = g++.exe
+CC       = gcc.exe
+WINDRES  = windres.exe
+OBJ      = src/main.o src/CSVReader.o src/VarianceCalculator.o src/MergeSort.o src/FeatureSelector.o src/HashTable.o src/PearsonCorrelation.o src/Graph.o src/Queue.o src/Stack.o src/BFS.o src/DFS.o src/DecisionTree.o src/Bagging.o src/Evaluation.o src/FileManager.o src/Menu.o src/ProjectManager.o
+LINKOBJ  = src/main.o src/CSVReader.o src/VarianceCalculator.o src/MergeSort.o src/FeatureSelector.o src/HashTable.o src/PearsonCorrelation.o src/Graph.o src/Queue.o src/Stack.o src/BFS.o src/DFS.o src/DecisionTree.o src/Bagging.o src/Evaluation.o src/FileManager.o src/Menu.o src/ProjectManager.o
+LIBS     = -L"C:/Program Files (x86)/Dev-Cpp/MinGW64/lib" -L"C:/Program Files (x86)/Dev-Cpp/MinGW64/x86_64-w64-mingw32/lib" -static-libgcc
+INCS     = -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/include" -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/x86_64-w64-mingw32/include" -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/lib/gcc/x86_64-w64-mingw32/4.9.2/include" -I"include"
+CXXINCS  = -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/include" -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/x86_64-w64-mingw32/include" -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/lib/gcc/x86_64-w64-mingw32/4.9.2/include" -I"C:/Program Files (x86)/Dev-Cpp/MinGW64/lib/gcc/x86_64-w64-mingw32/4.9.2/include/c++" -I"include"
+BIN      = GeneNet.exe
+CXXFLAGS = $(CXXINCS) -std=c++11
+CFLAGS   = $(INCS) 
+RM       = rm.exe -f
+
+.PHONY: all all-before all-after clean clean-custom
+
+all: all-before $(BIN) all-after
+
+clean: clean-custom
+	${RM} $(OBJ) $(BIN)
+
+$(BIN): $(OBJ)
+	$(CPP) $(LINKOBJ) -o $(BIN) $(LIBS)
+
+src/main.o: src/main.cpp
+	$(CPP) -c src/main.cpp -o src/main.o $(CXXFLAGS)
+
+src/CSVReader.o: src/CSVReader.cpp
+	$(CPP) -c src/CSVReader.cpp -o src/CSVReader.o $(CXXFLAGS)
+
+src/VarianceCalculator.o: src/VarianceCalculator.cpp
+	$(CPP) -c src/VarianceCalculator.cpp -o src/VarianceCalculator.o $(CXXFLAGS)
+
+src/MergeSort.o: src/MergeSort.cpp
+	$(CPP) -c src/MergeSort.cpp -o src/MergeSort.o $(CXXFLAGS)
+
+src/FeatureSelector.o: src/FeatureSelector.cpp
+	$(CPP) -c src/FeatureSelector.cpp -o src/FeatureSelector.o $(CXXFLAGS)
+
+src/HashTable.o: src/HashTable.cpp
+	$(CPP) -c src/HashTable.cpp -o src/HashTable.o $(CXXFLAGS)
+
+src/PearsonCorrelation.o: src/PearsonCorrelation.cpp
+	$(CPP) -c src/PearsonCorrelation.cpp -o src/PearsonCorrelation.o $(CXXFLAGS)
+
+src/Graph.o: src/Graph.cpp
+	$(CPP) -c src/Graph.cpp -o src/Graph.o $(CXXFLAGS)
+
+src/Queue.o: src/Queue.cpp
+	$(CPP) -c src/Queue.cpp -o src/Queue.o $(CXXFLAGS)
+
+src/Stack.o: src/Stack.cpp
+	$(CPP) -c src/Stack.cpp -o src/Stack.o $(CXXFLAGS)
+
+src/BFS.o: src/BFS.cpp
+	$(CPP) -c src/BFS.cpp -o src/BFS.o $(CXXFLAGS)
+
+src/DFS.o: src/DFS.cpp
+	$(CPP) -c src/DFS.cpp -o src/DFS.o $(CXXFLAGS)
+
+src/DecisionTree.o: src/DecisionTree.cpp
+	$(CPP) -c src/DecisionTree.cpp -o src/DecisionTree.o $(CXXFLAGS)
+
+src/Bagging.o: src/Bagging.cpp
+	$(CPP) -c src/Bagging.cpp -o src/Bagging.o $(CXXFLAGS)
+
+src/Evaluation.o: src/Evaluation.cpp
+	$(CPP) -c src/Evaluation.cpp -o src/Evaluation.o $(CXXFLAGS)
+
+src/FileManager.o: src/FileManager.cpp
+	$(CPP) -c src/FileManager.cpp -o src/FileManager.o $(CXXFLAGS)
+
+src/Menu.o: src/Menu.cpp
+	$(CPP) -c src/Menu.cpp -o src/Menu.o $(CXXFLAGS)
+
+src/ProjectManager.o: src/ProjectManager.cpp
+	$(CPP) -c src/ProjectManager.cpp -o src/ProjectManager.o $(CXXFLAGS)
