@@ -1,5 +1,6 @@
 #include "DecisionTree.h"
 #include <iostream>
+#include <cmath>
 
 using namespace std;
 
@@ -18,14 +19,7 @@ void DecisionTree::clear(TreeNode* node) {
     delete node;
 }
 
-static int getClassIndex(const string& label) {
-    if (label == "PRAD") return 0;
-    if (label == "LUAD") return 1;
-    if (label == "BRCA") return 2;
-    if (label == "KIRC") return 3;
-    if (label == "COAD") return 4;
-    return 5;
-}
+
 
 string DecisionTree::getMajorityClass(const vector<const Sample*>& samplePtrs) const {
     if (samplePtrs.empty()) return "";
@@ -64,19 +58,32 @@ string DecisionTree::getMajorityClass(const vector<const Sample*>& samplePtrs) c
 double DecisionTree::calculateGini(const vector<const Sample*>& samplePtrs) const {
     if (samplePtrs.empty()) return 0.0;
 
-    int counts[8] = {0};
+    // Dynamic class counting via stack arrays — no hardcoded labels, no prohibited
+    // containers, supports any number of cancer classes up to 32.
+    string classLabels[32];
+    int    classCounts[32];
+    int    numClasses = 0;
+
     for (size_t i = 0; i < samplePtrs.size(); ++i) {
-        int idx = getClassIndex(samplePtrs[i]->getLabel());
-        counts[idx]++;
+        const string& lbl = samplePtrs[i]->getLabel();
+        int found = -1;
+        for (int c = 0; c < numClasses; ++c) {
+            if (classLabels[c] == lbl) { found = c; break; }
+        }
+        if (found >= 0) {
+            classCounts[found]++;
+        } else if (numClasses < 32) {
+            classLabels[numClasses] = lbl;
+            classCounts[numClasses] = 1;
+            numClasses++;
+        }
     }
 
     double total = static_cast<double>(samplePtrs.size());
     double sumSqProb = 0.0;
-    for (int c = 0; c < 8; ++c) {
-        if (counts[c] > 0) {
-            double p = static_cast<double>(counts[c]) / total;
-            sumSqProb += (p * p);
-        }
+    for (int c = 0; c < numClasses; ++c) {
+        double p = static_cast<double>(classCounts[c]) / total;
+        sumSqProb += p * p;
     }
     return 1.0 - sumSqProb;
 }
@@ -91,7 +98,8 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
     node->prediction = majorityLabel;
 
     // Stopping conditions: pure node, max depth, or min samples
-    if (currentGini == 0.0 || depth >= maxDepth || static_cast<int>(samplePtrs.size()) < minSamplesSplit) {
+    // Use epsilon comparison: FP accumulation can yield ~1e-16 instead of exactly 0.0
+    if (currentGini < 1e-12 || depth >= maxDepth || static_cast<int>(samplePtrs.size()) < minSamplesSplit) {
         node->isLeaf = true;
         leafNodes++;
         return node;
@@ -106,34 +114,56 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
     size_t numFeatures = selectedGenes.size();
     size_t numSamplesInNode = samplePtrs.size();
 
-    // For each feature, compute 5 statistically-spread threshold candidates via a
-    // single linear scan (min, 25%, 50%, 75%, max-eps).  This is O(n) per feature,
-    // uses no prohibited containers, and ensures different bootstrap samples produce
-    // different candidates because bootstrap shifts the min/max/median of each feature.
-    static const double FRACTIONS[5] = { 0.0, 0.25, 0.5, 0.75, 1.0 };
+    // For each feature, compute 9 threshold candidates using a single O(n) linear
+    // scan to collect min, max, sum, and sum-of-squares.  This yields:
+    //   coarse grid  : 0%, 10%, 20%, 30%
+    //   distribution : mean-sigma, mean, mean+sigma  (data-aware, varies per bootstrap)
+    //   tails        : 80%, max-eps
+    // No std::sort. No prohibited containers. All stack-allocated.
 
     for (size_t f = 0; f < numFeatures; ++f) {
         int colIdx = selectedGenes[f].getIndex();
 
-        // Single linear scan to find min and max for this feature in the current node
+        // Single pass: collect min, max, sum, sumSq
         double minVal = samplePtrs[0]->getExpressions()[colIdx];
         double maxVal = minVal;
+        double sum    = minVal;
+        double sumSq  = minVal * minVal;
+
         for (size_t i = 1; i < numSamplesInNode; ++i) {
             double v = samplePtrs[i]->getExpressions()[colIdx];
             if (v < minVal) minVal = v;
             if (v > maxVal) maxVal = v;
+            sum   += v;
+            sumSq += v * v;
         }
 
-        // Skip constant features — all values identical, no useful split exists
+        // Skip constant features: every sample has the same value, no split is useful
         if (maxVal - minVal < 1e-12) continue;
 
         double range = maxVal - minVal;
+        double mean  = sum / static_cast<double>(numSamplesInNode);
+        double var   = (sumSq / static_cast<double>(numSamplesInNode)) - (mean * mean);
+        if (var < 0.0) var = 0.0;          // guard against tiny FP-negative variance
+        double sigma = sqrt(var);
 
-        for (int ci = 0; ci < 5; ++ci) {
-            // Candidate threshold: fraction of [min, max-eps] so the right child
-            // is always non-empty when threshold == maxVal
-            double threshold = minVal + FRACTIONS[ci] * range;
-            if (ci == 4) threshold = maxVal - 1e-9; // just below max
+        // Build 9 candidates on the stack
+        double candidates[9];
+        candidates[0] = minVal;
+        candidates[1] = minVal + range * 0.1;
+        candidates[2] = minVal + range * 0.2;
+        candidates[3] = minVal + range * 0.3;
+        candidates[4] = (sigma > 1e-12) ? (mean - sigma) : (minVal + range * 0.4);
+        candidates[5] = mean;
+        candidates[6] = (sigma > 1e-12) ? (mean + sigma) : (minVal + range * 0.6);
+        candidates[7] = minVal + range * 0.8;
+        candidates[8] = maxVal - 1e-9;     // just below max: right child always non-empty
+
+        for (int ci = 0; ci < 9; ++ci) {
+            double threshold = candidates[ci];
+            // Clamp: sigma extremes can push candidates outside [min, max)
+            if (threshold < minVal)           threshold = minVal;
+            if (threshold >= maxVal - 1e-9)   threshold = maxVal - 1e-9;
 
             vector<const Sample*> leftPtrs;
             vector<const Sample*> rightPtrs;
@@ -155,13 +185,11 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
 
             double giniGain = currentGini - splitGini;
 
-            // Tie-breaking: when Gini Gain is equal (within floating-point epsilon),
-            // prefer the more balanced split.  Balance is measured by the size of the
-            // smaller child — a larger smaller-child means a more even partition.
-            // Different bootstrap samples produce different balances, so ties break
-            // differently across trees, naturally increasing ensemble diversity.
-            size_t thisBalance  = leftPtrs.size() < rightPtrs.size() ? leftPtrs.size() : rightPtrs.size();
-            size_t bestBalance  = bestLeftPtrs.size() < bestRightPtrs.size() ? bestLeftPtrs.size() : bestRightPtrs.size();
+            // Tie-breaking: prefer more balanced split when gains are within epsilon.
+            // Bootstrap changes each tree's distribution, so balances differ per tree,
+            // naturally breaking ties in different directions across the ensemble.
+            size_t thisBalance = leftPtrs.size() < rightPtrs.size() ? leftPtrs.size() : rightPtrs.size();
+            size_t bestBalance = bestLeftPtrs.size() < bestRightPtrs.size() ? bestLeftPtrs.size() : bestRightPtrs.size();
 
             bool strictlyBetter = giniGain > bestGiniGain + 1e-12;
             bool tieBreakBetter = (giniGain >= bestGiniGain - 1e-12) &&
@@ -178,7 +206,7 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
         }
     }
 
-    if (bestGiniGain <= 0.0 || bestLeftPtrs.empty() || bestRightPtrs.empty()) {
+    if (bestGiniGain < 1e-12 || bestLeftPtrs.empty() || bestRightPtrs.empty()) {
         node->isLeaf = true;
         leafNodes++;
         return node;
@@ -257,6 +285,18 @@ static string findGeneName(int colIdx, const vector<Gene>& selectedGenes) {
     return "Gene_" + to_string(colIdx);
 }
 
+// Returns the name of the gene used at the root split
+string DecisionTree::getRootFeatureName(const vector<Gene>& selectedGenes) const {
+    if (root == NULL || root->isLeaf) return "N/A";
+    return findGeneName(root->featureIndex, selectedGenes);
+}
+
+// Returns the threshold value at the root split
+double DecisionTree::getRootThreshold() const {
+    if (root == NULL || root->isLeaf) return 0.0;
+    return root->threshold;
+}
+
 void DecisionTree::printNodeStructure(TreeNode* node,
                                       const vector<Gene>& selectedGenes,
                                       const string& prefix,
@@ -286,10 +326,15 @@ void DecisionTree::printNodeStructure(TreeNode* node,
     }
 
     if (!node->isLeaf && currentDepth < maxDepthToPrint) {
-        // Use plain '|' instead of Unicode box-drawing character
-        string nextPrefix = prefix + (isLeft ? "|   " : "    ");
-        if (currentDepth == 0) nextPrefix = "";
-        printNodeStructure(node->left, selectedGenes, nextPrefix, true, currentDepth + 1, maxDepthToPrint);
+        // Build child prefix: root's direct children start with ""; deeper nodes
+        // inherit the parent prefix plus a branch-continuation character.
+        string nextPrefix;
+        if (currentDepth == 0) {
+            nextPrefix = "";          // root's children: no leading indent
+        } else {
+            nextPrefix = prefix + (isLeft ? "|   " : "    ");
+        }
+        printNodeStructure(node->left,  selectedGenes, nextPrefix, true,  currentDepth + 1, maxDepthToPrint);
         printNodeStructure(node->right, selectedGenes, nextPrefix, false, currentDepth + 1, maxDepthToPrint);
     }
 }

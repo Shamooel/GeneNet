@@ -162,6 +162,8 @@ void ProjectManager::runPipeline() {
     cout << "Maximum Depth : " << dt.getMaxDepth() << "\n";
     cout << "Internal Nodes : " << dt.getInternalNodes() << "\n";
     cout << "Leaf Nodes : " << dt.getLeafNodes() << "\n";
+    cout << "Root Feature   : " << dt.getRootFeatureName(selected) << "\n";
+    cout << "Root Threshold : " << dt.getRootThreshold() << "\n";
     cout << "Training Samples : " << csvReader.getSampleCount() << "\n";
     cout << "Selected Features : " << selected.size() << "\n";
     cout << "------------------------------------\n\n";
@@ -401,6 +403,8 @@ void ProjectManager::runIndividualModule() {
             cout << "Module result saved to: " << savedPath << "\n";
 
             if (menu.askViewResults()) {
+                cout << "Root Feature   : " << dt.getRootFeatureName(selected) << "\n";
+                cout << "Root Threshold : " << dt.getRootThreshold() << "\n";
                 dt.printTreeStructure(selected, 2);
                 if (!csvReader.getSamples().empty()) {
                     int reprIdx = static_cast<int>(rand() % csvReader.getSamples().size());

@@ -76,6 +76,9 @@ public:
     int getMaxDepth() const;
     int getInternalNodes() const;
     int getLeafNodes() const;
+    // Root split information (useful for tree-diversity verification across ensemble)
+    std::string getRootFeatureName(const std::vector<Gene>& selectedGenes) const;
+    double getRootThreshold() const;
 
     // Print first few levels of tree structure with ASCII branches
     void printTreeStructure(const std::vector<Gene>& selectedGenes, int maxDepthToPrint = 2) const;
