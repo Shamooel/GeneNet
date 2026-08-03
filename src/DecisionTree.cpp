@@ -106,14 +106,34 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
     size_t numFeatures = selectedGenes.size();
     size_t numSamplesInNode = samplePtrs.size();
 
-    size_t sampleStep = numSamplesInNode / 5;
-    if (sampleStep < 1) sampleStep = 1;
+    // For each feature, compute 5 statistically-spread threshold candidates via a
+    // single linear scan (min, 25%, 50%, 75%, max-eps).  This is O(n) per feature,
+    // uses no prohibited containers, and ensures different bootstrap samples produce
+    // different candidates because bootstrap shifts the min/max/median of each feature.
+    static const double FRACTIONS[5] = { 0.0, 0.25, 0.5, 0.75, 1.0 };
 
     for (size_t f = 0; f < numFeatures; ++f) {
         int colIdx = selectedGenes[f].getIndex();
 
-        for (size_t s = 0; s < numSamplesInNode; s += sampleStep) {
-            double threshold = samplePtrs[s]->getExpressions()[colIdx];
+        // Single linear scan to find min and max for this feature in the current node
+        double minVal = samplePtrs[0]->getExpressions()[colIdx];
+        double maxVal = minVal;
+        for (size_t i = 1; i < numSamplesInNode; ++i) {
+            double v = samplePtrs[i]->getExpressions()[colIdx];
+            if (v < minVal) minVal = v;
+            if (v > maxVal) maxVal = v;
+        }
+
+        // Skip constant features — all values identical, no useful split exists
+        if (maxVal - minVal < 1e-12) continue;
+
+        double range = maxVal - minVal;
+
+        for (int ci = 0; ci < 5; ++ci) {
+            // Candidate threshold: fraction of [min, max-eps] so the right child
+            // is always non-empty when threshold == maxVal
+            double threshold = minVal + FRACTIONS[ci] * range;
+            if (ci == 4) threshold = maxVal - 1e-9; // just below max
 
             vector<const Sample*> leftPtrs;
             vector<const Sample*> rightPtrs;
@@ -128,19 +148,32 @@ TreeNode* DecisionTree::buildTree(const vector<const Sample*>& samplePtrs,
 
             if (leftPtrs.empty() || rightPtrs.empty()) continue;
 
-            double leftGini = calculateGini(leftPtrs);
+            double leftGini  = calculateGini(leftPtrs);
             double rightGini = calculateGini(rightPtrs);
-            double splitGini = (static_cast<double>(leftPtrs.size()) / numSamplesInNode) * leftGini +
+            double splitGini = (static_cast<double>(leftPtrs.size())  / numSamplesInNode) * leftGini +
                                (static_cast<double>(rightPtrs.size()) / numSamplesInNode) * rightGini;
 
             double giniGain = currentGini - splitGini;
 
-            if (giniGain > bestGiniGain) {
-                bestGiniGain = giniGain;
+            // Tie-breaking: when Gini Gain is equal (within floating-point epsilon),
+            // prefer the more balanced split.  Balance is measured by the size of the
+            // smaller child — a larger smaller-child means a more even partition.
+            // Different bootstrap samples produce different balances, so ties break
+            // differently across trees, naturally increasing ensemble diversity.
+            size_t thisBalance  = leftPtrs.size() < rightPtrs.size() ? leftPtrs.size() : rightPtrs.size();
+            size_t bestBalance  = bestLeftPtrs.size() < bestRightPtrs.size() ? bestLeftPtrs.size() : bestRightPtrs.size();
+
+            bool strictlyBetter = giniGain > bestGiniGain + 1e-12;
+            bool tieBreakBetter = (giniGain >= bestGiniGain - 1e-12) &&
+                                  (giniGain <= bestGiniGain + 1e-12) &&
+                                  (thisBalance > bestBalance);
+
+            if (strictlyBetter || tieBreakBetter) {
+                bestGiniGain   = giniGain;
                 bestGeneColIdx = colIdx;
-                bestThreshold = threshold;
-                bestLeftPtrs = leftPtrs;
-                bestRightPtrs = rightPtrs;
+                bestThreshold  = threshold;
+                bestLeftPtrs   = leftPtrs;
+                bestRightPtrs  = rightPtrs;
             }
         }
     }
@@ -241,7 +274,8 @@ void DecisionTree::printNodeStructure(TreeNode* node,
             cout << "  Predict : " << node->prediction << "\n";
         }
     } else {
-        string branch = isLeft ? "├── Left" : "└── Right";
+        // ASCII branch characters — compatible with Dev-C++ 5.11 console (CP850/1252)
+        string branch = isLeft ? "+-- Left" : "`-- Right";
         cout << prefix << branch << "\n";
         if (node->isLeaf) {
             cout << prefix << "  Predict : " << node->prediction << "\n";
@@ -252,7 +286,8 @@ void DecisionTree::printNodeStructure(TreeNode* node,
     }
 
     if (!node->isLeaf && currentDepth < maxDepthToPrint) {
-        string nextPrefix = prefix + (isLeft ? "│   " : "    ");
+        // Use plain '|' instead of Unicode box-drawing character
+        string nextPrefix = prefix + (isLeft ? "|   " : "    ");
         if (currentDepth == 0) nextPrefix = "";
         printNodeStructure(node->left, selectedGenes, nextPrefix, true, currentDepth + 1, maxDepthToPrint);
         printNodeStructure(node->right, selectedGenes, nextPrefix, false, currentDepth + 1, maxDepthToPrint);
@@ -276,22 +311,27 @@ void DecisionTree::traceNodePath(TreeNode* node,
                                  const vector<Gene>& selectedGenes) const {
     if (node == NULL) return;
     if (node->isLeaf || node->left == NULL || node->right == NULL) {
-        cout << "↓\n";
+        cout << "\n";
         cout << "Predicted Class : " << node->prediction << "\n";
-        cout << "Actual Class : " << sample.getLabel() << "\n";
-        cout << "Result : " << (node->prediction == sample.getLabel() ? "Correct" : "Incorrect") << "\n\n";
+        cout << "Actual Class    : " << sample.getLabel() << "\n";
+        cout << "Result          : " << (node->prediction == sample.getLabel() ? "Correct" : "Incorrect") << "\n\n";
         return;
     }
 
     double val = sample.getExpressions()[node->featureIndex];
     string geneName = findGeneName(node->featureIndex, selectedGenes);
 
+    // ASCII trace: plain comparison lines + explicit direction label
     cout << "Gene " << geneName << " = " << val << "\n";
     if (val <= node->threshold) {
-        cout << val << " <= " << node->threshold << "\n↓\n";
+        cout << val << " <= " << node->threshold << "\n";
+        cout << "Move to LEFT child\n";
+        cout << "-->\n";
         traceNodePath(node->left, sample, selectedGenes);
     } else {
-        cout << val << " > " << node->threshold << "\n↓\n";
+        cout << val << " > " << node->threshold << "\n";
+        cout << "Move to RIGHT child\n";
+        cout << "-->\n";
         traceNodePath(node->right, sample, selectedGenes);
     }
 }
